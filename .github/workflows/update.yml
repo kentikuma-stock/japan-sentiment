@@ -1,0 +1,36 @@
+name: 毎日センチメント自動更新
+
+on:
+  schedule:
+    # 毎朝8時（JST）= UTC 23時（前日）に実行
+    - cron: '0 23 * * *'
+  workflow_dispatch:
+    # 手動でも実行できるようにする
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: リポジトリをチェックアウト
+        uses: actions/checkout@v4
+
+      - name: Python 3.11 セットアップ
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 必要なライブラリをインストール
+        run: |
+          pip install yfinance pandas numpy pytz
+
+      - name: データ取得・index.html更新
+        run: python update.py
+
+      - name: 変更をGitHubにプッシュ
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git diff --staged --quiet || git commit -m "自動更新: $(date +'%Y-%m-%d')"
+          git push
