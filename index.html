@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>日本株センチメント指数</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Noto+Sans+JP:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#f4f3ef;--surface:#ffffff;
+  --border:rgba(0,0,0,0.09);--border-med:rgba(0,0,0,0.15);
+  --text:#1a1a18;--text2:#5f5e5a;--text3:#9a9890;
+  --fear:#E24B4A;--fear-bg:#FCEBEB;--fear-tx:#A32D2D;
+  --warn:#EF9F27;--warn-bg:#FAEEDA;--warn-tx:#854F0B;
+  --greed:#1D9E75;--greed-bg:#EAF3DE;--greed-tx:#3B6D11;
+  --neu:#888780;--neu-bg:#F1EFE8;--neu-tx:#5F5E5A;
+  --blue:#378ADD;--r:14px;
+}
+@media(prefers-color-scheme:dark){
+  :root{
+    --bg:#18181a;--surface:#222224;
+    --border:rgba(255,255,255,0.09);--border-med:rgba(255,255,255,0.16);
+    --text:#f0efe8;--text2:#b4b2a9;--text3:#6e6c65;
+    --fear-bg:#501313;--fear-tx:#F09595;
+    --warn-bg:#412402;--warn-tx:#FAC775;
+    --greed-bg:#173404;--greed-tx:#97C459;
+    --neu-bg:#2C2C2A;--neu-tx:#B4B2A9;
+  }
+}
+body{font-family:'Noto Sans JP',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+.page{max-width:860px;margin:0 auto;padding:2rem 1.25rem 4rem}
+
+header{display:flex;justify-content:space-between;align-items:flex-end;padding-bottom:1rem;margin-bottom:1.75rem;border-bottom:0.5px solid var(--border-med)}
+.site-name{font-size:13px;color:var(--text3);letter-spacing:.1em;text-transform:uppercase}
+.hdr-right{text-align:right}
+.hdr-date{font-family:'DM Mono',monospace;font-size:11px;color:var(--text3)}
+.hdr-lbl{font-size:10px;color:var(--text3);margin-bottom:2px}
+
+.gauge-card{background:var(--surface);border:0.5px solid var(--border);border-radius:var(--r);padding:2rem 1.5rem 1.75rem;display:flex;flex-direction:column;align-items:center;margin-bottom:1rem}
+.gauge-wrap{position:relative;width:320px;height:185px}
+.gauge-edge{display:flex;justify-content:space-between;width:320px;margin-top:3px}
+.gauge-edge span{font-size:10px;color:var(--text3);letter-spacing:.04em}
+.score-block{text-align:center;margin-top:.75rem}
+.score-num{font-family:'DM Mono',monospace;font-size:68px;font-weight:500;line-height:1;color:var(--text)}
+.score-lbl{font-size:15px;font-weight:500;margin-top:6px;letter-spacing:.05em}
+
+.ind-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:1rem}
+@media(max-width:500px){.ind-grid{grid-template-columns:1fr}}
+.ind-card{background:var(--surface);border:0.5px solid var(--border);border-radius:10px;padding:12px 14px}
+.ind-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.ind-name{font-size:11px;color:var(--text2)}
+.ind-src{font-size:10px;color:var(--text3);font-family:'DM Mono',monospace}
+.bar-bg{height:3px;background:var(--border);border-radius:2px;overflow:hidden;margin-bottom:8px}
+.bar-fill{height:100%;border-radius:2px;transition:width .5s ease}
+.ind-bot{display:flex;justify-content:space-between;align-items:center}
+.ind-num{font-family:'DM Mono',monospace;font-size:20px;font-weight:500}
+.sig{font-size:10px;padding:2px 9px;border-radius:99px;letter-spacing:.03em}
+
+.chart-card{background:var(--surface);border:0.5px solid var(--border);border-radius:var(--r);padding:1.5rem;margin-bottom:1rem}
+.chart-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:.9rem;flex-wrap:wrap;gap:8px}
+.sec-lbl{font-size:12px;color:var(--text2);letter-spacing:.06em;text-transform:uppercase}
+.legend{display:flex;gap:12px;flex-wrap:wrap}
+.leg{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text2)}
+.leg-ln{width:14px;height:2px;border-radius:1px}
+.tog-row{display:flex;gap:6px;margin-bottom:.9rem;flex-wrap:wrap}
+.tog{font-size:11px;padding:4px 11px;border-radius:99px;border:0.5px solid var(--border-med);background:transparent;color:var(--text2);cursor:pointer;font-family:'Noto Sans JP',sans-serif;transition:all .15s}
+.tog.on{background:var(--bg);color:var(--text);border-color:var(--border-med)}
+.tog:hover{background:var(--bg)}
+.chart-rel{position:relative}
+.tooltip{position:absolute;pointer-events:none;display:none;background:var(--surface);border:0.5px solid var(--border-med);border-radius:8px;padding:8px 12px;font-size:11px;z-index:10;min-width:175px}
+.tt-date{color:var(--text3);margin-bottom:4px;font-size:10px;font-family:'DM Mono',monospace}
+.tt-ev{font-size:11px;font-weight:500;margin-bottom:5px}
+.tt-row{display:flex;justify-content:space-between;gap:12px;margin-bottom:2px;align-items:center}
+.tt-lbl{color:var(--text2);display:flex;align-items:center;gap:4px;font-size:11px}
+.tt-dot{width:8px;height:2px;border-radius:1px;display:inline-block;flex-shrink:0}
+.tt-val{font-weight:500;font-family:'DM Mono',monospace;font-size:11px}
+
+footer{border-top:0.5px solid var(--border);padding-top:1.25rem;font-size:11px;color:var(--text3);line-height:1.9}
+</style>
+</head>
+<body>
+<div class="page">
+
+<header>
+  <div class="site-name">日本株センチメント指数</div>
+  <div class="hdr-right">
+    <div class="hdr-lbl">最終更新</div>
+    <div class="hdr-date" id="today"></div>
+  </div>
+</header>
+
+<div class="gauge-card">
+  <div class="gauge-wrap"><canvas id="gaugeC" width="320" height="185"></canvas></div>
+  <div class="gauge-edge"><span>extreme fear</span><span>extreme greed</span></div>
+  <div class="score-block">
+    <div class="score-num" id="scoreNum">--</div>
+    <div class="score-lbl" id="scoreLbl">計算中...</div>
+  </div>
+</div>
+
+<div class="ind-grid" id="indGrid"></div>
+
+<div class="chart-card">
+  <div class="chart-hdr">
+    <div class="sec-lbl">15年推移（2010〜2026）</div>
+    <div class="legend">
+      <div class="leg"><div class="leg-ln" style="background:#378ADD"></div>センチメント</div>
+      <div class="leg"><div class="leg-ln" style="background:#E24B4A"></div>日経平均</div>
+      <div class="leg"><div class="leg-ln" style="background:#1D9E75"></div>TOPIX</div>
+    </div>
+  </div>
+  <div class="tog-row">
+    <button class="tog on" onclick="setV('norm',this)">騰落率比較（2010=100）</button>
+    <button class="tog"    onclick="setV('abs',this)">実数値</button>
+    <button class="tog"    onclick="setV('sent',this)">センチメントのみ</button>
+  </div>
+  <div class="chart-rel">
+    <div class="tooltip" id="tt"></div>
+    <div style="position:relative;width:100%;height:300px">
+      <canvas id="mainC" role="img" aria-label="センチメント・日経平均・TOPIXの2010〜2026年推移"></canvas>
+    </div>
+  </div>
+  <div id="nkWrap" style="position:relative;width:100%;height:75px;margin-top:6px">
+    <canvas id="nkC" role="img" aria-label="日経平均推移（参考）"></canvas>
+  </div>
+</div>
+
+<footer>
+  ※ デモ版。日経VIと日経平均モメンタム（125日MA乖離）の実測値ベースで構築。<br>
+  ※ 実運用ではyfinance（日経平均・日経VI）＋Google Trendsで毎日自動更新予定。<br>
+  ※ 投資判断の参考情報であり、売買推奨ではありません。© 2026 日本株センチメント指数
+</footer>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+const DATES=["2010-01","2010-02","2010-03","2010-04","2010-05","2010-06","2010-07","2010-08","2010-09","2010-10","2010-11","2010-12","2011-01","2011-02","2011-03","2011-04","2011-05","2011-06","2011-07","2011-08","2011-09","2011-10","2011-11","2011-12","2012-01","2012-02","2012-03","2012-04","2012-05","2012-06","2012-07","2012-08","2012-09","2012-10","2012-11","2012-12","2013-01","2013-02","2013-03","2013-04","2013-05","2013-06","2013-07","2013-08","2013-09","2013-10","2013-11","2013-12","2014-01","2014-02","2014-03","2014-04","2014-05","2014-06","2014-07","2014-08","2014-09","2014-10","2014-11","2014-12","2015-01","2015-02","2015-03","2015-04","2015-05","2015-06","2015-07","2015-08","2015-09","2015-10","2015-11","2015-12","2016-01","2016-02","2016-03","2016-04","2016-05","2016-06","2016-07","2016-08","2016-09","2016-10","2016-11","2016-12","2017-01","2017-02","2017-03","2017-04","2017-05","2017-06","2017-07","2017-08","2017-09","2017-10","2017-11","2017-12","2018-01","2018-02","2018-03","2018-04","2018-05","2018-06","2018-07","2018-08","2018-09","2018-10","2018-11","2018-12","2019-01","2019-02","2019-03","2019-04","2019-05","2019-06","2019-07","2019-08","2019-09","2019-10","2019-11","2019-12","2020-01","2020-02","2020-03","2020-04","2020-05","2020-06","2020-07","2020-08","2020-09","2020-10","2020-11","2020-12","2021-01","2021-02","2021-03","2021-04","2021-05","2021-06","2021-07","2021-08","2021-09","2021-10","2021-11","2021-12","2022-01","2022-02","2022-03","2022-04","2022-05","2022-06","2022-07","2022-08","2022-09","2022-10","2022-11","2022-12","2023-01","2023-02","2023-03","2023-04","2023-05","2023-06","2023-07","2023-08","2023-09","2023-10","2023-11","2023-12","2024-01","2024-02","2024-03","2024-04","2024-05","2024-06","2024-07","2024-08","2024-09","2024-10","2024-11","2024-12","2025-01","2025-02","2025-03","2025-04","2025-05","2025-06","2025-07","2025-08","2025-09","2025-10","2025-11","2025-12","2026-01","2026-02","2026-03","2026-04"];
+const NK=[10552,10428,10212,10256,9915,9778,9712,9385,9316,9192,9272,9009,8816,8625,8548,8917,9328,9780,9622,9374,9468,9289,9062,9058,9029,8926,8742,8790,8529,8528,8769,9032,9532,9760,10125,10438,11238,11767,12855,13698,14468,14935,14807,15283,15281,15588,15679,15937,15894,15695,15336,15350,15230,15387,14992,14517,14657,14472,15260,16189,16904,17783,18335,18806,19754,20182,18774,17240,17667,18348,18649,18695,16042,15601,15687,15440,15101,15044,15998,16238,16994,18074,18774,19459,19549,19718,20147,20517,20751,20990,21466,21399,21878,22320,22322,22698,21947,21036,20650,20662,20545,20507,19832,20027,19842,19674,19563,19139,19229,19462,20175,20034,19975,20262,20275,20450,21397,22625,22473,23543,22173,21106,16401,18433,20739,22019,23627,23635,25179,25814,26318,26512,27681,28560,28293,29184,29447,29170,29858,30170,30535,30109,29363,27847,27076,25895,24853,25427,25894,26211,25801,26228,26045,26400,26226,26043,27449,28718,29564,30587,31606,32432,32501,33348,33309,33229,33394,33827,35453,38154,39770,40427,40359,40188,40705,31598,38023,38418,39167,40029,39705,37358,35745,30869,36035,36177,36859,37286,37459,38577,38063,38172,39696,46531,52623,57974];
+const TP=[911,907,888,883,853,839,828,806,784,773,770,752,740,726,718,749,784,824,812,796,800,788,772,774,770,762,750,754,733,732,750,773,814,830,861,886,954,998,1092,1163,1229,1268,1258,1299,1300,1326,1337,1360,1356,1340,1311,1315,1308,1320,1289,1252,1263,1248,1316,1395,1458,1533,1582,1622,1702,1741,1619,1488,1523,1583,1610,1615,1388,1349,1357,1340,1313,1309,1394,1417,1484,1580,1641,1700,1707,1725,1762,1796,1817,1841,1887,1882,1926,1968,1970,2006,1942,1862,1829,1830,1820,1818,1759,1775,1758,1744,1735,1699,1709,1729,1793,1781,1776,1801,1803,1817,1889,2000,1965,1872,1455,1633,1839,1953,2098,2097,2234,2289,2337,2356,2457,2536,2515,2592,2615,2592,2654,2683,2717,2682,2612,2475,2405,2298,2211,2264,2303,2331,2299,2339,2319,2353,2339,2328,2449,2562,2638,2730,2820,2894,2900,2977,2978,2981,2985,3021,3170,3415,3558,3626,3622,3607,3652,2835,3410,3445,3516,3596,3572,3361,3218,2780,3247,3258,3328,3368,3388,3484,3441,3452,3581,4199,4744,5228];
+const SC=[53,44,44,38,35,35,29,28,29,29,25,24,23,22,23,28,44,61,57,53,53,51,50,51,51,51,51,52,50,51,54,56,61,60,66,66,63,64,67,68,57,55,58,57,55,56,61,67,60,59,57,57,51,53,51,49,42,42,56,61,62,64,62,66,67,65,36,17,26,37,47,56,22,22,25,27,29,30,42,42,51,63,62,62,64,62,62,62,62,62,68,67,68,74,73,74,52,33,39,41,42,37,41,43,36,42,43,41,43,44,56,55,45,54,54,54,64,67,70,78,52,38,6,17,37,56,61,62,63,60,59,63,64,65,62,63,62,60,61,61,61,59,51,47,38,36,30,41,44,46,54,54,53,54,53,52,57,66,66,67,66,65,69,63,61,66,66,66,64,69,69,67,63,60,60,6,53,55,57,66,55,49,37,8,53,56,58,58,55,63,60,60,56,69,64,64];
+const EVENTS={"2011-03":"東日本大震災","2015-08":"チャイナショック","2016-01":"逆オイルショック","2016-06":"Brexit","2020-03":"コロナショック","2022-03":"ウクライナ侵攻","2024-08":"植田ショック","2025-04":"トランプ関税"};
+const NKN=NK.map(v=>+(v/NK[0]*100).toFixed(1));
+const TPN=TP.map(v=>+(v/TP[0]*100).toFixed(1));
+const LAST=SC.length-1;
+
+function scCol(s){return s<=25?'#E24B4A':s<=45?'#EF9F27':s<=55?'#888780':'#1D9E75'}
+function scLbl(s){return s<=25?'Extreme Fear':s<=45?'Fear':s<=55?'Neutral':s<=75?'Greed':'Extreme Greed'}
+function sigSt(s){
+  if(s<=25)return{bg:'var(--fear-bg)',color:'var(--fear-tx)'};
+  if(s<=45)return{bg:'var(--warn-bg)',color:'var(--warn-tx)'};
+  if(s<=55)return{bg:'var(--neu-bg)',color:'var(--neu-tx)'};
+  return{bg:'var(--greed-bg)',color:'var(--greed-tx)'};
+}
+
+document.getElementById('today').textContent=new Date().toLocaleDateString('ja-JP',{year:'numeric',month:'2-digit',day:'2-digit'});
+
+function drawGauge(score){
+  const cv=document.getElementById('gaugeC'),ctx=cv.getContext('2d');
+  const W=320,H=185,cx=W/2,cy=H-22,R=130,r=88;
+  ctx.clearRect(0,0,W,H);
+  [{from:0,to:.2,color:'#E24B4A'},{from:.2,to:.4,color:'#EF9F27'},{from:.4,to:.6,color:'#888780'},{from:.6,to:.8,color:'#639922'},{from:.8,to:1,color:'#1D9E75'}]
+  .forEach(z=>{
+    ctx.beginPath();ctx.arc(cx,cy,R,Math.PI+z.from*Math.PI,Math.PI+z.to*Math.PI);
+    ctx.arc(cx,cy,r,Math.PI+z.to*Math.PI,Math.PI+z.from*Math.PI,true);
+    ctx.fillStyle=z.color;ctx.fill();
+  });
+  const dark=matchMedia('(prefers-color-scheme:dark)').matches;
+  ctx.beginPath();ctx.arc(cx,cy,r-1,0,Math.PI*2);ctx.fillStyle=dark?'#222224':'#ffffff';ctx.fill();
+  const ang=Math.PI+(score/100)*Math.PI,nl=R-10;
+  ctx.save();ctx.translate(cx,cy);ctx.rotate(ang);
+  ctx.beginPath();ctx.moveTo(-5,0);ctx.lineTo(nl,0);ctx.lineTo(nl-7,-3);ctx.lineTo(nl-7,3);ctx.closePath();
+  ctx.fillStyle=dark?'#f0efe8':'#1a1a18';ctx.fill();ctx.restore();
+  ctx.beginPath();ctx.arc(cx,cy,9,0,Math.PI*2);ctx.fillStyle=dark?'#f0efe8':'#1a1a18';ctx.fill();
+}
+
+function renderScore(s){
+  drawGauge(s);
+  const n=document.getElementById('scoreNum');n.textContent=s;n.style.color=scCol(s);
+  const l=document.getElementById('scoreLbl');l.textContent=scLbl(s);l.style.color=scCol(s);
+}
+
+const INDS=[
+  {name:'日経平均モメンタム',src:'yfinance 自動',score:SC[LAST]},
+  {name:'日経VI（恐怖指数）', src:'yfinance 自動',score:Math.max(0,Math.min(100,SC[LAST]+5))},
+  {name:'騰落レシオ',         src:'手入力',       score:Math.max(0,Math.min(100,SC[LAST]-8))},
+  {name:'Google Trends',      src:'pytrends 自動', score:Math.max(0,Math.min(100,SC[LAST]-3))},
+];
+function renderInds(){
+  const g=document.getElementById('indGrid');g.innerHTML='';
+  INDS.forEach(ind=>{
+    const s=ind.score,c=scCol(s),sg=sigSt(s);
+    const d=document.createElement('div');d.className='ind-card';
+    d.innerHTML=`<div class="ind-top"><span class="ind-name">${ind.name}</span><span class="ind-src">${ind.src}</span></div>
+    <div class="bar-bg"><div class="bar-fill" style="width:${s}%;background:${c}"></div></div>
+    <div class="ind-bot"><span class="ind-num" style="color:${c}">${s}</span>
+    <span class="sig" style="background:${sg.bg};color:${sg.color}">${scLbl(s)}</span></div>`;
+    g.appendChild(d);
+  });
+}
+
+let mainC,curV='norm';
+function buildDS(v){
+  if(v==='sent')return[{label:'センチメント',data:SC,yAxisID:'y',borderColor:'#378ADD',borderWidth:2,backgroundColor:'transparent',pointBackgroundColor:SC.map(scCol),pointBorderColor:SC.map(scCol),pointRadius:DATES.map((d,i)=>EVENTS[d]?6:1.5),tension:.3,fill:false,order:1}];
+  return[
+    {label:'センチメント',data:SC,yAxisID:'yS',borderColor:'#378ADD',borderWidth:1.5,backgroundColor:'rgba(55,138,221,0.05)',pointBackgroundColor:SC.map(scCol),pointBorderColor:SC.map(scCol),pointRadius:DATES.map((d,i)=>EVENTS[d]?5:0.8),tension:.3,fill:true,order:3},
+    {label:'日経平均',data:v==='norm'?NKN:NK,yAxisID:'yP',borderColor:'#E24B4A',borderWidth:1.5,backgroundColor:'transparent',pointRadius:0,tension:.3,fill:false,order:1},
+    {label:'TOPIX',  data:v==='norm'?TPN:TP,yAxisID:'yP',borderColor:'#1D9E75',borderWidth:1.5,backgroundColor:'transparent',pointRadius:0,tension:.3,fill:false,order:2},
+  ];
+}
+function buildSc(v){
+  const x={ticks:{autoSkip:true,maxTicksLimit:8,maxRotation:0,color:'#888780',font:{size:10}},grid:{color:'rgba(136,135,128,0.1)'}};
+  const gFn=ctx=>{const vv=ctx.tick?.value;return vv===25?'rgba(226,75,74,0.2)':vv===50?'rgba(136,135,128,0.15)':'rgba(136,135,128,0.07)'};
+  if(v==='sent')return{x,y:{min:0,max:100,ticks:{stepSize:25,color:'#888780',font:{size:10}},grid:{color:gFn}}};
+  return{x,
+    yS:{min:0,max:100,position:'left',ticks:{stepSize:25,color:'#378ADD',font:{size:10},callback:vv=>vv===0?'Fear':vv===50?'50':vv===100?'Greed':vv},grid:{color:gFn}},
+    yP:{position:'right',ticks:{color:'#888780',font:{size:10},callback:vv=>v==='norm'?vv.toFixed(0):(vv>=10000?(vv/10000).toFixed(1)+'万':vv.toLocaleString())},grid:{display:false}},
+  };
+}
+function buildMain(v){
+  const ctx=document.getElementById('mainC').getContext('2d');
+  if(mainC)mainC.destroy();
+  mainC=new Chart(ctx,{type:'line',data:{labels:DATES,datasets:buildDS(v)},options:{
+    responsive:true,maintainAspectRatio:false,
+    interaction:{mode:'index',intersect:false},
+    plugins:{legend:{display:false},tooltip:{enabled:false}},
+    scales:buildSc(v),
+    onHover:(evt,els)=>{
+      const tt=document.getElementById('tt');
+      if(!els.length){tt.style.display='none';return;}
+      const i=els[0].index,s=SC[i],ev=EVENTS[DATES[i]];
+      const rect=ctx.canvas.getBoundingClientRect(),x=evt.native.clientX-rect.left,y=evt.native.clientY-rect.top;
+      let h=`<div class="tt-date">${DATES[i]}</div>`;
+      if(ev)h+=`<div class="tt-ev" style="color:${scCol(s)}">${ev}</div>`;
+      h+=`<div class="tt-row"><span class="tt-lbl"><span class="tt-dot" style="background:#378ADD"></span>センチメント</span><span class="tt-val" style="color:${scCol(s)}">${s}</span></div>`;
+      if(v!=='sent'){
+        h+=`<div class="tt-row"><span class="tt-lbl"><span class="tt-dot" style="background:#E24B4A"></span>日経平均</span><span class="tt-val">${v==='norm'?NKN[i].toFixed(1):NK[i].toLocaleString()}</span></div>`;
+        h+=`<div class="tt-row"><span class="tt-lbl"><span class="tt-dot" style="background:#1D9E75"></span>TOPIX</span><span class="tt-val">${v==='norm'?TPN[i].toFixed(1):TP[i].toLocaleString()}</span></div>`;
+        if(v==='norm'){const d=(NKN[i]-TPN[i]).toFixed(1);h+=`<div class="tt-row"><span class="tt-lbl">日経-TOPIX</span><span class="tt-val" style="color:${parseFloat(d)>0?'#E24B4A':'#1D9E75'}">${d>0?'+':''}${d}</span></div>`;}
+      }
+      tt.innerHTML=h;tt.style.display='block';
+      const ttW=180;tt.style.left=(x+14+ttW>rect.width?x-ttW-6:x+14)+'px';tt.style.top=Math.max(0,y-20)+'px';
+    }
+  }});
+}
+
+function buildNk(){
+  const ctx=document.getElementById('nkC').getContext('2d');
+  new Chart(ctx,{type:'line',data:{labels:DATES,datasets:[{data:NK,borderColor:'rgba(136,135,128,0.45)',borderWidth:1,backgroundColor:'rgba(136,135,128,0.06)',pointRadius:0,tension:.3,fill:true}]},
+  options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{enabled:false}},
+    scales:{x:{ticks:{autoSkip:true,maxTicksLimit:8,maxRotation:0,color:'#888780',font:{size:9}},grid:{color:'rgba(136,135,128,0.07)'}},
+    y:{ticks:{color:'#888780',font:{size:9},callback:v=>(v/10000).toFixed(0)+'万'},grid:{color:'rgba(136,135,128,0.07)'}}}}});
+}
+
+function setV(v,btn){
+  curV=v;
+  document.querySelectorAll('.tog').forEach(b=>b.classList.remove('on'));btn.classList.add('on');
+  document.getElementById('nkWrap').style.display=v==='sent'?'none':'block';
+  buildMain(v);
+}
+
+renderScore(SC[LAST]);
+renderInds();
+buildMain('norm');
+buildNk();
+</script>
+</body>
+</html>
