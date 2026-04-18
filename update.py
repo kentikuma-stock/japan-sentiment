@@ -42,7 +42,7 @@ if vi_raw is None or len(vi_raw) < 100:
     nk_daily = nk_raw.copy()
     nk_ret = nk_daily.pct_change()
     # 20日ローリング標準偏差 × √252 × 100 でVI代替値を計算
-    vi_raw = (nk_ret.rolling(20).std() * (252**0.5) * 100).fillna(method="bfill")
+    vi_raw = (nk_ret.rolling(20).std() * (252**0.5) * 100).bfill()
     vi_raw = vi_raw.clip(10, 80)
 
 print(f"  日経平均: {len(nk_raw)}件 ? {nk_raw.index[-1].date()}")
