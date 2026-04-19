@@ -2,6 +2,7 @@
 """
 日本株センチメント指数 - 毎日自動更新スクリプト
 yfinanceで日経平均・日経VIを取得してindex.htmlのデータを更新する
+日次データ版
 """
 
 import yfinance as yf
@@ -17,14 +18,13 @@ today = datetime.now(JST)
 print(f"実行日時: {today.strftime('%Y-%m-%d %H:%M')} JST")
 
 # ── 1. データ取得 ──────────────────────────────
-START = "2010-11-01"  # 日経VI算出開始月
+START = "2010-11-01"
 END   = today.strftime("%Y-%m-%d")
 
 print("yfinanceからデータ取得中...")
 nk_raw  = yf.download("^N225", start=START, end=END, auto_adjust=True, progress=False)["Close"].squeeze()
 jpy_raw = yf.download("JPY=X", start=START, end=END, auto_adjust=True, progress=False)["Close"].squeeze()
 
-# 日経VIは複数ティッカーを試みる
 vi_raw = None
 for vi_ticker in ["^JNIV", "^VXJ", "JNIV"]:
     try:
@@ -36,37 +36,30 @@ for vi_ticker in ["^JNIV", "^VXJ", "JNIV"]:
     except Exception:
         continue
 
-# 取得できない場合は日経平均の変動率からVI代替値を計算
 if vi_raw is None or len(vi_raw) < 100:
     print("  日経VI: yfinance取得不可 → 日経平均ボラティリティで代替")
-    nk_daily = nk_raw.copy()
-    nk_ret = nk_daily.pct_change()
-    # 20日ローリング標準偏差 × √252 × 100 でVI代替値を計算
+    nk_ret = nk_raw.pct_change()
     vi_raw = (nk_ret.rolling(20).std() * (252**0.5) * 100).bfill()
     vi_raw = vi_raw.clip(10, 80)
 
-print(f"  日経平均: {len(nk_raw)}件 ? {nk_raw.index[-1].date()}")
+print(f"  日経平均: {len(nk_raw)}件 → {nk_raw.index[-1].date()}")
 print(f"  日経VI:   {len(vi_raw)}件")
-print(f"  ドル円:   {len(jpy_raw)}件 ? {jpy_raw.index[-1].date()}")
+print(f"  ドル円:   {len(jpy_raw)}件 → {jpy_raw.index[-1].date()}")
 
-# ── 2. 月次に集約 ──────────────────────────────
-nk_m  = nk_raw.resample("MS").last().dropna()
-vi_m  = vi_raw.resample("MS").last().dropna()
-jpy_m = jpy_raw.resample("MS").last().dropna()
+# ── 2. 日次に揃える（月次resampleをやめる）──────
+# 共通営業日インデックスで揃える
+idx = nk_raw.index.intersection(jpy_raw.index)
+nk_d  = nk_raw.loc[idx]
+vi_d  = vi_raw.reindex(idx, method="ffill").bfill()
+jpy_d = jpy_raw.loc[idx]
 
-# 共通インデックスで揃える
-idx = nk_m.index.intersection(vi_m.index)
-nk_m  = nk_m.loc[idx]
-vi_m  = vi_m.loc[idx]
-jpy_m = jpy_m.reindex(idx, method="nearest")
-
-# ── 3. センチメントスコア計算 ──────────────────
+# ── 3. センチメントスコア計算（日次版）──────────
 def calc_scores(nk_series, vi_series, jpy_series):
     nk  = np.array(nk_series)
     vi  = np.array(vi_series)
     jpy = np.array(jpy_series)
     scores = []
-    MA_WIN = 4  # 月次4ヶ月 ? 125日
+    MA_WIN = 125  # 125営業日MA
 
     for i in range(len(nk)):
         # モメンタム（125日MA乖離）
@@ -90,9 +83,8 @@ def calc_scores(nk_series, vi_series, jpy_series):
         else:         vi_s = 85
 
         # ドル円（円高=Fear=低スコア）
-        # 直近平均からの乖離で判定
-        if i >= 12:
-            jpy_avg = np.mean(jpy[i-12:i])
+        if i >= 250:
+            jpy_avg = np.mean(jpy[i-250:i])
             jpy_dev = (jpy[i] - jpy_avg) / jpy_avg * 100
             jpy_s = max(0, min(100, 50 + jpy_dev * 3))
         else:
@@ -103,44 +95,31 @@ def calc_scores(nk_series, vi_series, jpy_series):
 
     return scores
 
-scores = calc_scores(nk_m, vi_m, jpy_m)
+scores = calc_scores(nk_d, vi_d, jpy_d)
 
-# ── 4. TOPIXデータ（日経平均に連動した推定値）──
-# TOPIXはyfinance無料版で取得困難なため、日経平均と相関係数を使って推定
-# 実運用では別途データソースを検討
-tp_ratio = 0.078  # TOPIX ? 日経平均 × 0.078 (概算)
-tp_vals  = [round(v * tp_ratio) for v in nk_m.values.tolist()]
+# ── 4. TOPIXデータ ──────────────────────────────
+tp_ratio = 0.078
+tp_vals  = [round(v * tp_ratio) for v in nk_d.values.tolist()]
 
 # ── 5. JSONデータ構築 ──────────────────────────
-dates  = [d.strftime("%Y-%m") for d in nk_m.index]
-nk_lst = [round(v) for v in nk_m.values.tolist()]
-vi_lst = [round(v, 1) for v in vi_m.values.tolist()]
+dates  = [d.strftime("%Y-%m-%d") for d in nk_d.index]  # 日次："2011-03-11"形式
+nk_lst = [round(v) for v in nk_d.values.tolist()]
+vi_lst = [round(v, 1) for v in vi_d.values.tolist()]
 
 nk0, tp0 = nk_lst[0], tp_vals[0]
 nk_norm = [round(v / nk0 * 100, 1) for v in nk_lst]
 tp_norm = [round(v / tp0 * 100, 1) for v in tp_vals]
 
+# イベントも正確な日付で指定
 EVENTS = {
-    "2011-03": "東日本大震災",
-    "2015-08": "チャイナショック",
-    "2016-01": "逆オイルショック",
-    "2016-06": "Brexit",
-    "2020-03": "コロナショック",
-    "2022-03": "ウクライナ侵攻",
-    "2024-08": "植田ショック",
-    "2025-04": "トランプ関税",
-}
-
-data = {
-    "dates":      dates,
-    "nikkei":     nk_lst,
-    "topix":      tp_vals,
-    "vi":         vi_lst,
-    "score":      scores,
-    "nikkei_norm": nk_norm,
-    "topix_norm":  tp_norm,
-    "events":     EVENTS,
-    "updated":    today.strftime("%Y/%m/%d"),
+    "2011-03-11": "東日本大震災",
+    "2015-08-24": "チャイナショック",
+    "2016-01-21": "逆オイルショック",
+    "2016-06-24": "Brexit",
+    "2020-03-19": "コロナショック",
+    "2022-03-09": "ウクライナ侵攻",
+    "2024-08-05": "植田ショック",
+    "2025-04-07": "トランプ関税",
 }
 
 latest = scores[-1]
@@ -151,7 +130,6 @@ print(f"日経平均: {nk_lst[-1]:,}  VI: {vi_lst[-1]}")
 with open("index.html", "r", encoding="utf-8") as f:
     html = f.read()
 
-# 各変数を置換
 def replace_js_var(html, var_name, new_value):
     pattern = rf'(const {var_name}=)\[.*?\]'
     replacement = f'\\g<1>{json.dumps(new_value)}'
@@ -174,4 +152,4 @@ with open("index.html", "w", encoding="utf-8") as f:
     f.write(html)
 
 print("\nindex.html を更新しました ?")
-print(f"データ件数: {len(dates)}ヶ月分 ({dates[0]} ? {dates[-1]})")
+print(f"データ件数: {len(dates)}営業日分 ({dates[0]} → {dates[-1]})")
