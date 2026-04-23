@@ -21,7 +21,7 @@ jobs:
           python-version: '3.11'
       - name: 必要なライブラリをインストール
         run: |
-          pip install yfinance pandas numpy pytz pandas-datareader
+          pip install yfinance pandas numpy pytz pandas-datareader==0.10.0
       - name: データ取得・index.html更新
         run: python update.py
       - name: 変更をGitHubにプッシュ
