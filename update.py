@@ -120,4 +120,27 @@ with open("index.html", "r", encoding="utf-8") as f:
 
 def replace_js_array(html, var_name, new_value):
     pattern = rf'(const {var_name}=)\[[\s\S]*?\](?=;)'
-    result  = re.sub(pa
+    result  = re.sub(pattern, f'\\g<1>{json.dumps(new_value)}', html)
+    print(f"  {'✅' if result != html else '⚠️'} {var_name}")
+    return result
+
+def replace_js_obj(html, var_name, new_value):
+    # セミコロンありなしどちらにも対応
+    pattern = rf'const {var_name}=\{{[\s\S]*?\}};'
+    new_str = f'const {var_name}={json.dumps(new_value, ensure_ascii=False)};'
+    result  = re.sub(pattern, new_str, html)
+    print(f"  {'✅' if result != html else '⚠️'} {var_name}")
+    return result
+
+print("\nindex.html 書き換え中...")
+html = replace_js_array(html, "DATES",  dates)
+html = replace_js_array(html, "NK",     nk_lst)
+html = replace_js_array(html, "TP",     tp_vals)
+html = replace_js_array(html, "SC",     scores)
+html = replace_js_obj  (html, "EVENTS", EVENTS)
+
+with open("index.html", "w", encoding="utf-8") as f:
+    f.write(html)
+
+print(f"\n✅ 完了: {len(dates)}営業日 ({dates[0]} → {dates[-1]})")
+print(f"   最新スコア: {latest} | VI: {vi_arr[-1]:.2f}")
