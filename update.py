@@ -5,7 +5,6 @@ import numpy as np
 import json
 import re
 import requests
-from io import StringIO
 from datetime import datetime
 import pytz
 
@@ -28,9 +27,16 @@ vi_raw = None
 try:
     url = f"https://stooq.com/q/d/l/?s=^jniv.jp&d1=20101101&d2={today.strftime('%Y%m%d')}&i=d"
     r = requests.get(url, timeout=15)
-    df_vi = pd.read_csv(StringIO(r.text), parse_dates=["Date"], index_col="Date")
-    df_vi = df_vi.sort_index()
-    vi_raw = df_vi["Close"].dropna()
+    # カラム名を確認してから処理
+    from io import StringIO
+    df_vi = pd.read_csv(StringIO(r.text))
+    print(f"  stooqカラム: {df_vi.columns.tolist()}")
+    # 日付カラムを自動検出
+    date_col = df_vi.columns[0]
+    close_col = [c for c in df_vi.columns if 'Close' in c or 'close' in c][0]
+    df_vi[date_col] = pd.to_datetime(df_vi[date_col])
+    df_vi = df_vi.set_index(date_col).sort_index()
+    vi_raw = df_vi[close_col].dropna()
     if len(vi_raw) > 100:
         print(f"  日経VI取得成功: stooq ({len(vi_raw)}件 → {vi_raw.index[-1].date()})")
     else:
@@ -114,25 +120,4 @@ with open("index.html", "r", encoding="utf-8") as f:
 
 def replace_js_array(html, var_name, new_value):
     pattern = rf'(const {var_name}=)\[[\s\S]*?\](?=;)'
-    result  = re.sub(pattern, f'\\g<1>{json.dumps(new_value)}', html)
-    print(f"  {'✅' if result != html else '⚠️'} {var_name}")
-    return result
-
-def replace_js_obj(html, var_name, new_value):
-    pattern = rf'(const {var_name}=)\{{[\s\S]*?\}}(?=;)'
-    result  = re.sub(pattern, f'\\g<1>{json.dumps(new_value, ensure_ascii=False)}', html)
-    print(f"  {'✅' if result != html else '⚠️'} {var_name}")
-    return result
-
-print("\nindex.html 書き換え中...")
-html = replace_js_array(html, "DATES",  dates)
-html = replace_js_array(html, "NK",     nk_lst)
-html = replace_js_array(html, "TP",     tp_vals)
-html = replace_js_array(html, "SC",     scores)
-html = replace_js_obj  (html, "EVENTS", EVENTS)
-
-with open("index.html", "w", encoding="utf-8") as f:
-    f.write(html)
-
-print(f"\n✅ 完了: {len(dates)}営業日 ({dates[0]} → {dates[-1]})")
-print(f"   最新スコア: {latest} | VI: {vi_arr[-1]:.2f}")
+    result  = re.sub(pa
