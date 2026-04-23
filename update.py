@@ -5,6 +5,7 @@ import numpy as np
 import json
 import re
 import requests
+from io import StringIO
 from datetime import datetime
 import pytz
 
@@ -15,33 +16,30 @@ print(f"実行日時: {today.strftime('%Y-%m-%d %H:%M')} JST")
 START = "2010-11-01"
 END   = today.strftime("%Y-%m-%d")
 
-# ── 1. 日経平均・ドル円取得 ──────────────────────────
+# 1. 日経平均・ドル円取得
 print("yfinanceからデータ取得中...")
 nk_raw  = yf.download("^N225", start=START, end=END, auto_adjust=True, progress=False)["Close"].squeeze()
 jpy_raw = yf.download("JPY=X",  start=START, end=END, auto_adjust=True, progress=False)["Close"].squeeze()
-print(f"  日経平均: {len(nk_raw)}件 → {nk_raw.index[-1].date()}")
-print(f"  ドル円:   {len(jpy_raw)}件 → {jpy_raw.index[-1].date()}")
+print(f"  日経平均: {len(nk_raw)}件 -> {nk_raw.index[-1].date()}")
+print(f"  ドル円:   {len(jpy_raw)}件 -> {jpy_raw.index[-1].date()}")
 
-# ── 2. 日経VI取得（stooq直接HTTP）──────────────────
+# 2. 日経VI取得（stooq直接HTTP）
 vi_raw = None
 try:
-    url = f"https://stooq.com/q/d/l/?s=^jniv.jp&d1=20101101&d2={today.strftime('%Y%m%d')}&i=d"
-    r = requests.get(url, timeout=15)
-    # カラム名を確認してから処理
-    from io import StringIO
+    url = f"https://stooq.com/q/d/l/?s=jniv.jp&d1=20101101&d2={today.strftime('%Y%m%d')}&i=d"
+    r = requests.get(url, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
     df_vi = pd.read_csv(StringIO(r.text))
     print(f"  stooqカラム: {df_vi.columns.tolist()}")
-    # 日付カラムを自動検出
-    date_col = df_vi.columns[0]
-    close_col = [c for c in df_vi.columns if 'Close' in c or 'close' in c][0]
+    date_col  = df_vi.columns[0]
+    close_col = [c for c in df_vi.columns if c.lower() == "close"][0]
     df_vi[date_col] = pd.to_datetime(df_vi[date_col])
     df_vi = df_vi.set_index(date_col).sort_index()
     vi_raw = df_vi[close_col].dropna()
     if len(vi_raw) > 100:
-        print(f"  日経VI取得成功: stooq ({len(vi_raw)}件 → {vi_raw.index[-1].date()})")
+        print(f"  日経VI取得成功: stooq ({len(vi_raw)}件 -> {vi_raw.index[-1].date()})")
     else:
         vi_raw = None
-        print("  stooq: データ不足 → 代替へ")
+        print(f"  stooq: データ不足({len(vi_raw)}件) -> 代替へ")
 except Exception as e:
     print(f"  stooq失敗: {e}")
 
@@ -50,14 +48,14 @@ if vi_raw is None:
     nk_ret = nk_raw.pct_change()
     vi_raw = (nk_ret.rolling(20).std() * (252**0.5) * 100).bfill().clip(10, 80)
 
-# ── 3. インデックス統一 ──────────────────────────────
+# 3. インデックス統一
 idx   = nk_raw.index.intersection(jpy_raw.index)
 nk_d  = nk_raw.loc[idx]
 jpy_d = jpy_raw.loc[idx]
 vi_d  = vi_raw.reindex(idx, method="ffill").bfill()
 print(f"  統合後: {len(nk_d)}件 | VI最新: {vi_d.iloc[-1]:.2f}")
 
-# ── 4. センチメントスコア計算 ─────────────────────────
+# 4. センチメントスコア計算
 def vi_to_score(v):
     if   v < 15: return 90
     elif v < 18: return 80
@@ -94,7 +92,7 @@ vi_arr  = vi_d.values.astype(float)
 jpy_arr = jpy_d.values.astype(float)
 scores  = calc_scores(nk_arr, vi_arr, jpy_arr)
 
-# ── 5. データ整形 ──────────────────────────────────
+# 5. データ整形
 dates   = [d.strftime("%Y-%m-%d") for d in nk_d.index]
 nk_lst  = [round(v) for v in nk_arr.tolist()]
 tp_vals = [round(v * 0.078) for v in nk_arr.tolist()]
@@ -112,24 +110,23 @@ EVENTS = {
 
 latest = scores[-1]
 print(f"\n最新スコア: {latest} ({dates[-1]})")
-print(f"  VI: {vi_arr[-1]:.2f} → VIスコア: {vi_to_score(vi_arr[-1])}")
+print(f"  VI: {vi_arr[-1]:.2f} -> VIスコア: {vi_to_score(vi_arr[-1])}")
 
-# ── 6. HTML書き換え ────────────────────────────────
+# 6. HTML書き換え
 with open("index.html", "r", encoding="utf-8") as f:
     html = f.read()
 
 def replace_js_array(html, var_name, new_value):
     pattern = rf'(const {var_name}=)\[[\s\S]*?\](?=;)'
-    result  = re.sub(pattern, f'\\g<1>{json.dumps(new_value)}', html)
-    print(f"  {'✅' if result != html else '⚠️'} {var_name}")
+    result = re.sub(pattern, f'\\g<1>{json.dumps(new_value)}', html)
+    print(f"  {'OK' if result != html else 'NG'} {var_name}")
     return result
 
 def replace_js_obj(html, var_name, new_value):
-    # セミコロンありなしどちらにも対応
-    pattern = rf'const {var_name}=\{{[\s\S]*?\}};'
-    new_str = f'const {var_name}={json.dumps(new_value, ensure_ascii=False)};'
-    result  = re.sub(pattern, new_str, html)
-    print(f"  {'✅' if result != html else '⚠️'} {var_name}")
+    pattern = rf'const {var_name}=\{{[\s\S]*?\}}(?=;|\n)'
+    new_str = f'const {var_name}={json.dumps(new_value, ensure_ascii=False)}'
+    result = re.sub(pattern, new_str, html)
+    print(f"  {'OK' if result != html else 'NG'} {var_name}")
     return result
 
 print("\nindex.html 書き換え中...")
@@ -142,5 +139,5 @@ html = replace_js_obj  (html, "EVENTS", EVENTS)
 with open("index.html", "w", encoding="utf-8") as f:
     f.write(html)
 
-print(f"\n✅ 完了: {len(dates)}営業日 ({dates[0]} → {dates[-1]})")
-print(f"   最新スコア: {latest} | VI: {vi_arr[-1]:.2f}")
+print(f"\n完了: {len(dates)}営業日 ({dates[0]} -> {dates[-1]})")
+print(f"最新スコア: {latest} | VI: {vi_arr[-1]:.2f}")
